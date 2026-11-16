@@ -170,6 +170,43 @@ input.grow{flex:1;min-width:150px}
 .log .f{display:inline-block;margin-left:6px;padding:0 7px;font-family:var(--font-display);font-weight:900;font-style:italic;font-size:13px;background:var(--track-200);color:var(--paper-900);clip-path:polygon(8% 0,100% 0,92% 100%,0 100%)}
 .del{border:0;background:transparent;color:var(--paper-400);min-width:36px;min-height:36px;border-radius:var(--r-sm)}
 .del:hover{color:var(--accent)}
+
+/* ---------- setup: subjects sit in a rail beside the block settings on wide screens ---------- */
+.setup-main{margin-top:28px}
+.subjects{display:flex;flex-wrap:wrap;gap:8px;list-style:none;margin:0;padding:0}
+.subj{display:inline-flex;align-items:stretch;border:1px solid var(--edge);border-radius:var(--r-sm);transition:border-color var(--t-fast) var(--ease)}
+.subj:hover{border-color:var(--papaya)}
+.subj.on{background:var(--ferrari);border-color:var(--ferrari)}
+.subj button{border:0;background:none}
+.subj button:focus-visible{outline-offset:-3px}
+.subj .pick{flex:1;min-height:40px;padding:7px 14px;text-align:left;font-family:var(--font-display);font-weight:700;font-size:15px;letter-spacing:.04em;text-transform:uppercase;color:var(--paper-700)}
+.subj .pick:not(:last-child){padding-right:4px}
+.subj:hover .pick{color:var(--paper-900)}
+.subj .x{flex:none;width:32px;font-size:11px;line-height:1;color:var(--paper-400);transition:color var(--t-fast) var(--ease)}
+.subj .x:hover{color:var(--accent)}
+.subj.on .pick{color:var(--ferrari-ink)}
+.subj.on .x{color:var(--ferrari-ink);opacity:.7}
+.subj.on .x:hover{opacity:1}
+.link{border:0;background:none;padding:0;color:var(--accent);font-weight:500;text-decoration:underline;text-underline-offset:2px}
+@media (min-width:1024px){
+  body[data-wide] .measure,body[data-wide] .road,body[data-wide] .marks{max-width:1140px}
+  .setup{display:grid;grid-template-columns:minmax(0,1fr) 264px;column-gap:48px;align-items:start}
+  .setup-head{grid-column:1;grid-row:1}
+  .setup-main{grid-column:1;grid-row:2;margin-top:0}
+  .rail{grid-column:2;grid-row:1 / span 2;margin-top:44px;padding-left:24px;border-left:1px solid var(--track-300)}
+  .rail .subjects{flex-direction:column;flex-wrap:nowrap;gap:6px}
+  .rail .subj{display:flex}
+  .rail input.grow{min-width:0}
+}
+
+/* ---------- confirm dialog ---------- */
+.ask{width:min(440px,calc(100vw - 32px));padding:0;border:1px solid var(--edge);border-radius:var(--r-lg);background:var(--track-100);color:var(--paper-700);overflow:hidden}
+.ask::backdrop{background:rgba(5,13,32,.72)}
+.ask[open]{animation:ask-in var(--t-base) var(--ease)}
+@keyframes ask-in{from{opacity:0;transform:translateY(8px)}}
+.ask-in{display:flex;flex-direction:column;gap:10px;margin:0;padding:22px 22px 20px}
+.ask-in p{color:var(--paper-900)}
+.ask-actions{justify-content:flex-end;margin-top:12px}
 </style>
 </head>
 <body>
@@ -183,6 +220,17 @@ input.grow{flex:1;min-width:150px}
   </div>
 </nav>
 <main id="view"></main>
+<dialog class="ask" id="ask" aria-labelledby="ask-title" aria-describedby="ask-body">
+  <div class="kerb" aria-hidden="true"></div>
+  <form method="dialog" class="ask-in">
+    <h2 class="title" id="ask-title"></h2>
+    <p id="ask-body"></p>
+    <div class="row ask-actions">
+      <button class="btn" value="no" id="ask-no"></button>
+      <button class="btn primary" value="yes" id="ask-yes"></button>
+    </div>
+  </form>
+</dialog>
 <script>
 'use strict';
 const KEY = 'focus-timer.v1';
@@ -228,6 +276,8 @@ let allTime = false;
 let form = null;          // rating form state while a block is pending
 let flash = '';           // one-off message on the setup screen
 let audio = null;
+let removed = null;       // last removed subject {name,index}, for Undo
+let askYes = null, askTag = '';
 
 function load(){
   let s = {};
@@ -302,12 +352,29 @@ function themeMode(){
   try { return window.matchMedia('(prefers-color-scheme: light)').matches ? 'light' : 'dark'; } catch(e){ return 'dark'; }
 }
 
+/* ---------- confirm dialog ---------- */
+// In-page replacement for confirm(). Focus lands on the safe button; Esc and a backdrop click both cancel.
+function ask(o){
+  const d = $('#ask');
+  $('#ask-title').textContent = o.title;
+  $('#ask-body').textContent = o.body;
+  $('#ask-no').textContent = o.no;
+  $('#ask-yes').textContent = o.yes;
+  askYes = o.onYes; askTag = o.tag || '';
+  d.returnValue = '';
+  d.showModal();
+}
+function closeAsk(tag){
+  const d = $('#ask');
+  if (d.open && askTag === tag){ askYes = null; d.close(); }
+}
+
 /* ---------- timer actions ---------- */
 function start(kind){
   primeAudio();
   const minutes = kind === 'break' ? S.prefs.breakMin : S.prefs.minutes;
   S.active = {kind, subject:S.prefs.subject, plannedSec:minutes*60, start:Date.now(), acc:0, since:Date.now(), distractions:[]};
-  flash = ''; save(); render();
+  flash = ''; removed = null; save(); render();
 }
 function togglePause(){
   const a = S.active; if(!a) return;
@@ -316,6 +383,7 @@ function togglePause(){
 }
 function finish(focusedSec, end){
   const a = S.active; S.active = null;
+  closeAsk('discard');
   if (a.kind === 'break'){ flash = 'Break over. Pick the next block.'; }
   else if (focusedSec < 60){ flash = 'Under a minute, so nothing was logged.'; }
   else {
@@ -346,6 +414,7 @@ function render(){
     if (b.dataset.tab === tab) b.setAttribute('aria-current', 'page'); else b.removeAttribute('aria-current');
   });
   const sw = $('.theme-switch'); if (sw) sw.dataset.mode = themeMode();
+  document.body.toggleAttribute('data-wide', tab === 'timer' && !S.pending && !S.active);
   $('#view').innerHTML = tab === 'week' ? weekView() : S.pending ? rateView() : S.active ? runView() : setupView();
   tick();
 }
@@ -371,24 +440,29 @@ function setupView(){
   const todayStart = new Date().setHours(0,0,0,0);
   const today = S.sessions.filter(s => s.start >= todayStart);
   const custom = !LENGTHS.includes(p.minutes);
-  return `<div class="measure">
-    <section class="hero">
-      <span class="badge num">Today · ${today.length ? `${today.length} block${today.length>1?'s':''} · ${dur(today.reduce((n,s)=>n+s.focusedSec,0))} focused` : 'no blocks yet'}</span>
-      <h1 class="hero-title">Lights out.<br><em>Eyes down.</em></h1>
-    </section>
-    <div class="stack">
+  const many = S.subjects.length > 1;
+  return `<div class="measure setup">
+    <div class="setup-head">
+      <section class="hero">
+        <span class="badge num">Today · ${today.length ? `${today.length} block${today.length>1?'s':''} · ${dur(today.reduce((n,s)=>n+s.focusedSec,0))} focused` : 'no blocks yet'}</span>
+        <h1 class="hero-title">Lights out.<br><em>Eyes down.</em></h1>
+      </section>
       ${flash ? `<p class="note">${esc(flash)}</p>` : ''}
-      <div class="group">
-        <span class="label">Subject</span>
-        <div class="row">
-          ${S.subjects.map(s => `<button class="chip" data-act="subject" data-v="${esc(s)}" aria-pressed="${s===p.subject}">${esc(s)}</button>`).join('')}
-        </div>
-        <form class="row" data-form="add-subject">
-          <input class="grow" type="text" name="name" maxlength="40" placeholder="Add a subject" aria-label="Add a subject">
-          <button class="btn" type="submit">Add</button>
-          ${DEFAULT_SUBJECTS.includes(p.subject) ? '' : `<button class="btn quiet" type="button" data-act="remove-subject">Remove “${esc(p.subject)}”</button>`}
-        </form>
-      </div>
+    </div>
+    <aside class="rail group" aria-label="Subject">
+      <span class="label">Subject</span>
+      <ul class="subjects">
+        ${S.subjects.map(s => `<li class="subj${s===p.subject ? ' on' : ''}">
+          <button class="pick" data-act="subject" data-v="${esc(s)}" aria-pressed="${s===p.subject}">${esc(s)}</button>${many ? `<button class="x" data-act="remove-subject" data-v="${esc(s)}" aria-label="Remove ${esc(s)}" title="Remove ${esc(s)}">✕</button>` : ''}
+        </li>`).join('')}
+      </ul>
+      <form class="row" data-form="add-subject">
+        <input class="grow" type="text" name="name" maxlength="40" placeholder="Add a subject" aria-label="Add a subject">
+        <button class="btn" type="submit">Add</button>
+      </form>
+      ${removed ? `<p class="micro" role="status">Removed “${esc(removed.name)}”. Its logged blocks stay. <button class="link" data-act="undo-remove">Undo</button></p>` : ''}
+    </aside>
+    <div class="stack setup-main">
       <div class="group">
         <span class="label">Block length</span>
         <div class="row">
@@ -614,8 +688,17 @@ document.addEventListener('click', e => {
   }
   else if (act === 'subject'){ S.prefs.subject = v; save(); render(); }
   else if (act === 'remove-subject'){
-    S.subjects = S.subjects.filter(s => s !== S.prefs.subject);
-    S.prefs.subject = S.subjects[0]; save(); render();
+    const i = S.subjects.indexOf(v);
+    if (i < 0 || S.subjects.length < 2) return;
+    S.subjects.splice(i, 1);
+    if (S.prefs.subject === v) S.prefs.subject = S.subjects[Math.min(i, S.subjects.length-1)];
+    removed = {name:v, index:i};
+    save(); render();
+  }
+  else if (act === 'undo-remove'){
+    if (!removed) return;
+    if (!S.subjects.includes(removed.name)) S.subjects.splice(removed.index, 0, removed.name);
+    removed = null; save(); render();
   }
   else if (act === 'minutes'){ S.prefs.minutes = +v; save(); render(); }
   else if (act === 'start'){ start('focus'); }
@@ -631,7 +714,18 @@ document.addEventListener('click', e => {
   }
   else if (act === 'finish'){ finish(elapsed(S.active), Date.now()); }
   else if (act === 'discard'){
-    if (confirm('Discard this block without logging it?')){ S.active = null; save(); render(); }
+    const a = S.active; if (!a) return;
+    const sec = elapsed(a), n = (a.distractions||[]).length;
+    ask({
+      tag: 'discard',
+      title: 'Discard this block?',
+      body: (sec < 60
+          ? `You're under a minute into ${a.subject}. Nothing will be logged.`
+          : `${dur(sec)} of ${a.subject} won't be logged${n ? `, and neither will the ${n} distraction tap${n>1?'s':''}` : ''}.`)
+        + (a.since ? ' The timer keeps running while you decide.' : ''),
+      no: 'Keep going', yes: 'Discard block',
+      onYes(){ if (!S.active) return; S.active = null; flash = 'Block discarded. Nothing was logged.'; save(); render(); },
+    });
   }
   else if (act === 'rate'){
     form.rating = +v;
@@ -654,12 +748,24 @@ document.addEventListener('click', e => {
     save(); render();
   }
   else if (act === 'drop-pending'){
-    if (confirm('Throw this block away without logging it?')){ S.pending = null; form = null; save(); render(); }
+    const p = S.pending;
+    ask({
+      title: "Don't log this block?",
+      body: `${dur(p.focusedSec)} of ${p.subject} will be thrown away without a rating.`,
+      no: 'Back to rating', yes: "Don't log this",
+      onYes(){ S.pending = null; form = null; flash = 'Block thrown away. Nothing was logged.'; save(); render(); },
+    });
   }
   else if (act === 'week'){ weekOffset = Math.min(0, weekOffset + (+v)); render(); }
   else if (act === 'alltime'){ allTime = !allTime; render(); }
   else if (act === 'delete'){
-    if (confirm('Delete this block from the log?')){ S.sessions = S.sessions.filter(s => s.id !== v); save(); render(); }
+    const b = S.sessions.find(s => s.id === v); if (!b) return;
+    ask({
+      title: 'Delete this block?',
+      body: `${b.subject}, ${dur(b.focusedSec)}, ${fmtDay(b.start)} at ${fmtTime(b.start)}. It comes out of the log and the totals.`,
+      no: 'Keep it', yes: 'Delete block',
+      onYes(){ S.sessions = S.sessions.filter(s => s.id !== v); save(); render(); },
+    });
   }
   else if (act === 'export'){
     const blob = new Blob([JSON.stringify({subjects:S.subjects, sessions:S.sessions}, null, 2)], {type:'application/json'});
@@ -705,6 +811,12 @@ document.addEventListener('change', e => {
     }).catch(() => alert("That file couldn't be read as a focus log."));
   }
 });
+
+$('#ask').addEventListener('close', e => {
+  const f = askYes; askYes = null;
+  if (e.target.returnValue === 'yes' && f) f();
+});
+$('#ask').addEventListener('click', e => { if (e.target === e.currentTarget) e.target.close(); });
 
 document.addEventListener('input', e => { if (e.target.id === 'note' && form) form.note = e.target.value; });
 window.addEventListener('beforeunload', e => { if (S.pending){ e.preventDefault(); e.returnValue = ''; } });
