@@ -1,0 +1,717 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>Focus Tracker</title>
+<meta name="description" content="Pomodoro-style focus timer with a session log, a one-tap distraction log and a weekly view of hours, best time of day and typical session length.">
+<script>try{var t=localStorage.getItem('focus-timer.theme');if(t)document.documentElement.dataset.theme=t}catch(e){}</script>
+<link rel="preconnect" href="https://fonts.googleapis.com">
+<link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+<link rel="stylesheet" href="https://fonts.googleapis.com/css2?family=IBM+Plex+Sans:wght@400;500;600&family=Titillium+Web:ital,wght@0,600;0,700;0,900;1,700&display=swap">
+<style>
+/* Visual language borrowed from the CIL F1 dashboard: deep navy track, warm
+   off-white text, Ferrari red as the one action colour, papaya as the second
+   livery colour, heavy italic display type, sharp corners, hairlines not shadows. */
+:root{
+  --track-000:#050d20; --track-050:#081530; --track-100:#0e1e40; --track-200:#162a55; --track-300:#233a66;
+  --paper-900:#f7f4f1; --paper-700:#d6d5d9; --paper-500:#a9a9b6; --paper-400:#8e8e9c;
+  --accent:#ff3b2f; --edge:#727283; --focus:#f7f4f1; --papaya:#ff8000;
+  --ferrari:#e10600; --ferrari-ink:#ffffff; --papaya-fill:#ff8000; --papaya-ink:#15151e;
+  --asphalt:#2b2e36; --asphalt-lane:#3a3e48; --chalk:#f7f4f1;
+  --nav-surface:rgba(8,21,48,.84);
+  --font-display:'Titillium Web','Avenir Next Condensed','Arial Narrow',system-ui,sans-serif;
+  --font-text:'IBM Plex Sans','Segoe UI',system-ui,sans-serif;
+  --r-sm:2px; --r-md:4px; --r-lg:6px;
+  --t-fast:120ms; --t-base:180ms; --ease:cubic-bezier(.2,0,.3,1);
+  color-scheme:dark;
+}
+@media (prefers-color-scheme: light){:root:not([data-theme="dark"]){
+  --track-000:#ffffff; --track-050:#eff6ff; --track-100:#e4effd; --track-200:#d7e6fa; --track-300:#c2d6f3;
+  --paper-900:#15151e; --paper-700:#38384a; --paper-500:#555566; --paper-400:#5f5f70;
+  --accent:#d10f00; --edge:#7a7a8a; --focus:#15151e; --papaya:#a84300;
+  --nav-surface:rgba(239,246,255,.84); color-scheme:light}}
+:root[data-theme="light"]{
+  --track-000:#ffffff; --track-050:#eff6ff; --track-100:#e4effd; --track-200:#d7e6fa; --track-300:#c2d6f3;
+  --paper-900:#15151e; --paper-700:#38384a; --paper-500:#555566; --paper-400:#5f5f70;
+  --accent:#d10f00; --edge:#7a7a8a; --focus:#15151e; --papaya:#a84300;
+  --nav-surface:rgba(239,246,255,.84); color-scheme:light}
+
+*{box-sizing:border-box; accent-color:var(--accent); caret-color:var(--accent)}
+html{overflow-x:clip}
+body{margin:0;background:var(--track-050);color:var(--paper-700);font-family:var(--font-text);font-size:15px;line-height:1.55;-webkit-font-smoothing:antialiased}
+::selection{background:var(--ferrari);color:var(--ferrari-ink)}
+:focus-visible{outline:2px solid var(--focus);outline-offset:2px;border-radius:var(--r-sm)}
+h1,h2,p{margin:0}
+button,input{font:inherit;color:inherit}
+button{cursor:pointer}
+@media (prefers-reduced-motion: reduce){*,*::before,*::after{transition-duration:.01ms !important;animation-duration:.01ms !important}}
+
+.measure{max-width:820px;margin:0 auto;padding:0 20px}
+@media (max-width:480px){.measure{padding:0 16px}}
+
+/* ---------- chrome ---------- */
+.topline{height:3px;background:linear-gradient(90deg,var(--ferrari) 0 62%,var(--papaya-fill) 62% 100%)}
+.nav{position:sticky;top:0;z-index:10;background:var(--track-050);border-bottom:1px solid var(--edge)}
+@supports (backdrop-filter:blur(1px)) or (-webkit-backdrop-filter:blur(1px)){
+  .nav{background:var(--nav-surface);-webkit-backdrop-filter:blur(10px) saturate(1.4);backdrop-filter:blur(10px) saturate(1.4)}}
+.nav-in{display:flex;align-items:center;gap:8px;min-height:52px}
+.brand{display:flex;align-items:center;gap:10px;margin-right:auto;font-family:var(--font-display);font-weight:900;font-style:italic;font-size:19px;letter-spacing:.02em;text-transform:uppercase;color:var(--paper-900);white-space:nowrap}
+.logo-mark{display:inline-flex;gap:3px}
+.logo-mark span{display:block;width:5px;height:18px;transform:skewX(-20deg)}
+.navlink{position:relative;background:none;border:0;padding:16px 10px;font-family:var(--font-display);font-weight:700;font-size:14px;letter-spacing:.06em;text-transform:uppercase;color:var(--paper-700);transition:color var(--t-fast) var(--ease)}
+.navlink::after{content:"";position:absolute;left:10px;right:10px;bottom:0;height:3px;background:var(--ferrari);transform:scaleX(0);transform-origin:left;transition:transform var(--t-base) var(--ease)}
+.navlink:hover{color:var(--paper-900)}
+.navlink:hover::after{transform:scaleX(.35);background:var(--papaya-fill)}
+.navlink[aria-current="page"]{color:var(--paper-900)}
+.navlink[aria-current="page"]::after{transform:scaleX(1);background:var(--ferrari)}
+.theme-switch{position:relative;width:46px;height:26px;margin-left:6px;flex:none;border-radius:999px;border:1px solid var(--edge);background:var(--track-200);padding:0}
+.theme-switch i{position:absolute;top:3px;left:3px;width:18px;height:18px;border-radius:999px;background:var(--ferrari);transition:transform var(--t-base) var(--ease),background-color var(--t-base) var(--ease)}
+.theme-switch[data-mode="light"] i{transform:translateX(20px);background:var(--papaya-fill)}
+@media (max-width:480px){.brand b{display:none}}
+
+/* ---------- type ---------- */
+.hero{padding:44px 0 26px}
+.hero-title{margin-top:14px;font-family:var(--font-display);font-weight:900;font-style:italic;font-size:clamp(52px,11.5vw,104px);line-height:.92;letter-spacing:-.02em;text-transform:uppercase;color:var(--paper-900);text-wrap:balance}
+.hero-title em{font-style:inherit;color:var(--accent)}
+.hero-sub{margin-top:14px;max-width:56ch;font-size:16px}
+.title{font-family:var(--font-display);font-weight:700;font-size:22px;line-height:1.15;letter-spacing:.01em;text-transform:uppercase;color:var(--paper-900)}
+.label{font-size:13px;font-weight:500;color:var(--paper-500)}
+.micro{font-size:12px;color:var(--paper-400)}
+.num{font-variant-numeric:tabular-nums}
+.unit{font-family:var(--font-text);font-size:12px;font-weight:400;font-style:normal;color:var(--paper-400);text-transform:none;letter-spacing:0}
+.badge{display:inline-flex;align-items:center;gap:7px;border:1px solid var(--edge);border-radius:var(--r-sm);padding:3px 9px;font-size:12px;font-weight:500;color:var(--paper-500);font-variant-numeric:tabular-nums}
+.badge::before{content:"";width:7px;height:7px;background:var(--papaya)}
+.badge.live::before{background:var(--accent)}
+
+/* ---------- layout ---------- */
+#view{padding-bottom:72px}
+.stack{display:flex;flex-direction:column;gap:28px}
+.group{display:flex;flex-direction:column;gap:10px}
+.row{display:flex;flex-wrap:wrap;gap:8px;align-items:center}
+.between{justify-content:space-between}
+.card{background:var(--track-100);border:1px solid var(--track-300);border-radius:var(--r-md);padding:18px;display:flex;flex-direction:column;gap:14px}
+.card.focal{border-color:var(--edge);border-radius:var(--r-lg)}
+.note{border-left:3px solid var(--papaya);padding:8px 12px;background:var(--track-100);color:var(--paper-900)}
+
+/* ---------- controls ---------- */
+.chip{font-family:var(--font-display);font-weight:700;font-size:15px;letter-spacing:.04em;text-transform:uppercase;min-height:40px;padding:7px 14px;border:1px solid var(--edge);border-radius:var(--r-sm);background:transparent;color:var(--paper-700);transition:border-color var(--t-fast) var(--ease),color var(--t-fast) var(--ease)}
+.chip:hover{border-color:var(--papaya);color:var(--paper-900)}
+.chip[aria-pressed="true"]{background:var(--ferrari);border-color:var(--ferrari);color:var(--ferrari-ink)}
+.chip.tap{min-height:52px;padding:10px 20px;font-size:18px;background:var(--track-200)}
+.btn{font-family:var(--font-display);font-weight:700;font-size:16px;letter-spacing:.04em;text-transform:uppercase;min-height:46px;padding:9px 20px;border:1px solid var(--edge);border-radius:var(--r-sm);background:transparent;color:var(--paper-700);transition:border-color var(--t-fast) var(--ease),color var(--t-fast) var(--ease),opacity var(--t-fast) var(--ease)}
+.btn:hover:not(:disabled){border-color:var(--paper-400);color:var(--paper-900)}
+.btn:disabled{opacity:.45;cursor:not-allowed}
+.btn.primary{background:var(--ferrari);border-color:var(--ferrari);color:var(--ferrari-ink)}
+.btn.primary:hover:not(:disabled){opacity:.86;color:var(--ferrari-ink)}
+.btn.go{font-weight:900;font-style:italic;font-size:22px;min-height:58px;padding:10px 28px}
+.btn.quiet{border-color:transparent;color:var(--paper-500);font-family:var(--font-text);font-weight:500;font-size:14px;text-transform:none;letter-spacing:0;padding:9px 8px}
+.btn.quiet:hover:not(:disabled){border-color:transparent;color:var(--accent)}
+.btn.sq{min-width:46px;padding:9px 0}
+input[type=text],input[type=number]{background:var(--track-200);border:1px solid var(--edge);border-radius:var(--r-sm);padding:8px 10px;min-height:40px;color:var(--paper-900);font-variant-numeric:tabular-nums}
+input:hover{border-color:var(--paper-400)}
+input::placeholder{color:var(--paper-400)}
+input[type=number]{width:82px}
+input.grow{flex:1;min-width:150px}
+
+/* ---------- the clock: the one display element while a block runs ---------- */
+.clock{font-family:var(--font-display);font-weight:900;font-style:italic;font-size:clamp(104px,27vw,216px);line-height:.86;letter-spacing:-.03em;color:var(--paper-900);font-variant-numeric:tabular-nums;margin:10px 0 0 -4px}
+.clock.paused{color:var(--paper-400)}
+
+/* ---------- race strip: the block drawn to scale, grid line to chequered flag ---------- */
+.strip-bleed{width:100vw;margin-left:calc(50% - 50vw);background:var(--asphalt)}
+.kerb{height:8px;background:repeating-linear-gradient(90deg,var(--ferrari) 0 26px,var(--chalk) 26px 52px)}
+.road{max-width:820px;margin:0 auto;padding:0 56px 0 46px;height:92px}
+.lane{position:relative;height:100%}
+.lane .gridline{position:absolute;top:0;bottom:0;left:0;width:3px;background:var(--chalk)}
+.lane .finish{position:absolute;top:0;bottom:0;left:100%;width:18px;background:repeating-conic-gradient(#15151e 0 25%,var(--chalk) 0 50%) 0 0/18px 18px}
+.lane .centre{position:absolute;left:0;right:0;top:50%;height:0;border-top:2px dashed var(--asphalt-lane)}
+.lane .band{position:absolute;left:0;bottom:12px;height:4px;background:var(--papaya-fill)}
+.lane .tick{position:absolute;top:8px;width:3px;height:16px;background:var(--chalk);transform:translateX(-50%)}
+.lane .car{position:absolute;top:46%;width:clamp(64px,10vw,92px);height:auto;transform:translate(-62%,-50%)}
+.marks{max-width:820px;margin:0 auto;padding:6px 40px 10px 46px;display:flex;justify-content:space-between;font-family:var(--font-display);font-weight:700;font-size:14px;color:var(--chalk);font-variant-numeric:tabular-nums}
+
+/* ---------- rating ---------- */
+.rate{display:grid;grid-template-columns:repeat(5,1fr);gap:8px}
+.rate button{display:flex;flex-direction:column;align-items:flex-start;gap:0;padding:8px 10px 10px;border:1px solid var(--edge);border-radius:var(--r-sm);background:var(--track-100);text-align:left;transition:border-color var(--t-fast) var(--ease)}
+.rate button:hover{border-color:var(--papaya)}
+.rate b{font-family:var(--font-display);font-weight:900;font-style:italic;font-size:clamp(34px,8vw,52px);line-height:1;color:var(--paper-900)}
+.rate span{font-size:12px;color:var(--paper-500)}
+.rate button[aria-pressed="true"]{background:var(--ferrari);border-color:var(--ferrari)}
+.rate button[aria-pressed="true"] b,.rate button[aria-pressed="true"] span{color:var(--ferrari-ink)}
+
+/* ---------- stats: no boxes, one hairline above and below ---------- */
+.stats{display:grid;grid-template-columns:repeat(4,minmax(0,1fr));border-block:1px solid var(--track-300)}
+.stat{padding:16px 12px 16px 0}
+.stat dd{margin:0;font-family:var(--font-display);font-weight:700;font-size:34px;line-height:1.05;color:var(--paper-900);font-variant-numeric:tabular-nums}
+.stat dt{margin-top:2px;font-size:13px;font-weight:500;color:var(--paper-500)}
+@media (max-width:560px){.stats{grid-template-columns:repeat(2,minmax(0,1fr))}}
+.big{font-family:var(--font-display);font-weight:900;font-style:italic;font-size:clamp(40px,8vw,60px);line-height:1;text-transform:uppercase;color:var(--accent)}
+
+/* ---------- leaderboards ---------- */
+.board{display:grid;grid-template-columns:auto minmax(84px,auto) 1fr auto;align-items:stretch}
+.board>*{display:flex;align-items:center;padding:9px 14px 9px 0;border-bottom:1px solid var(--track-300)}
+.board>.val{padding-right:0;justify-content:flex-end}
+.board .name{color:var(--paper-900);font-weight:500}
+.board .val{text-align:right;color:var(--paper-900);font-weight:500;font-size:14px;font-variant-numeric:tabular-nums;white-space:nowrap}
+.pos{display:inline-block;min-width:38px;padding:1px 10px 1px 8px;text-align:center;font-family:var(--font-display);font-weight:900;font-style:italic;font-size:15px;line-height:1.3;color:var(--paper-900);background:var(--track-200);clip-path:polygon(8% 0,100% 0,92% 100%,0 100%)}
+.pos[data-p="1"]{background:var(--ferrari);color:var(--ferrari-ink)}
+.board>.meterwrap{min-height:42px}
+.stat .unit{margin:0 5px 0 2px}
+.meter{flex:1;height:6px;background:var(--track-300)}
+.meter i{display:block;height:100%;background:var(--papaya-fill)}
+.meter.lead i{background:var(--ferrari)}
+.marker{color:var(--accent);font-size:12px;font-weight:600;margin-left:6px}
+
+.log{list-style:none;margin:0;padding:0}
+.log li{display:flex;gap:12px;align-items:center;padding:10px 0;border-bottom:1px solid var(--track-300)}
+.log li>div{flex:1;min-width:0}
+.log .code{font-family:var(--font-display);font-weight:700;letter-spacing:.03em;text-transform:uppercase;color:var(--paper-900)}
+.log .f{display:inline-block;margin-left:6px;padding:0 7px;font-family:var(--font-display);font-weight:900;font-style:italic;font-size:13px;background:var(--track-200);color:var(--paper-900);clip-path:polygon(8% 0,100% 0,92% 100%,0 100%)}
+.del{border:0;background:transparent;color:var(--paper-400);min-width:36px;min-height:36px;border-radius:var(--r-sm)}
+.del:hover{color:var(--accent)}
+</style>
+</head>
+<body>
+<div class="topline"></div>
+<nav class="nav">
+  <div class="measure nav-in">
+    <div class="brand"><span class="logo-mark" aria-hidden="true"><span style="background:var(--ferrari)"></span><span style="background:var(--papaya-fill)"></span></span><span>Focus <b>Tracker</b></span></div>
+    <button class="navlink" data-act="tab" data-tab="timer" aria-current="page">Timer</button>
+    <button class="navlink" data-act="tab" data-tab="week">Week</button>
+    <button class="theme-switch" data-act="theme" aria-label="Switch between light and dark"><i></i></button>
+  </div>
+</nav>
+<main id="view"></main>
+<script>
+'use strict';
+const KEY = 'focus-timer.v1';
+const THEME_KEY = 'focus-timer.theme';
+const DEFAULT_SUBJECTS = ['GRE Quant','GRE Verbal','AI','NLP','ADS','OR','DL','SOP writing'];
+const TAPS = ['Phone','Thoughts','Noise','Tired','Other'];   // one-tap reasons while a block runs
+const BREAKERS = ['Phone','Thoughts','Noise','Tired','People','Hungry','Stuck on material','Nothing'];
+const FIXES = {
+  'Phone': 'Put it in another room, or switch it off, before you press Start.',
+  'Thoughts': 'Keep a scrap of paper next to you. Park each thought there in a few words, then go back.',
+  'Noise': 'Change where you sit, or use earplugs or steady background sound.',
+  'Tired': 'Move your blocks to your best time of day and make them shorter.',
+  'People': 'Tell them when your block ends, or study somewhere else.',
+  'Hungry': 'Eat before the block, not during it.',
+  'Stuck on material': 'Mark the spot and move on. Come back to the stuck points after the break.',
+};
+const WINDOW_DAYS = 14;
+const RATE_LABELS = ['Scattered','Patchy','Okay','Solid','Locked in'];
+const LENGTHS = [25, 50, 90];
+const BUCKETS = [
+  {name:'Late night', range:'12–5 am', from:0, to:5},
+  {name:'Early morning', range:'5–8 am', from:5, to:8},
+  {name:'Morning', range:'8 am–12', from:8, to:12},
+  {name:'Afternoon', range:'12–4 pm', from:12, to:16},
+  {name:'Evening', range:'4–8 pm', from:16, to:20},
+  {name:'Night', range:'8 pm–12', from:20, to:24},
+];
+const DAY = 86400000;
+const CAR = `<svg class="car" id="car" viewBox="0 0 120 36" aria-hidden="true">
+  <path d="M3 6h13v4h-5v9H7v-9H3z" fill="#ff8000"/>
+  <path d="M7 25 16 15l30-2 8-8h14l5 9 26 3 14 6v4H7z" fill="#e10600"/>
+  <path d="M56 8h10l3 5H52z" fill="#15151e"/>
+  <path d="M100 25h18v3h-18z" fill="#ff8000"/>
+  <circle cx="27" cy="26" r="8.5" fill="#15151e" stroke="#f7f4f1" stroke-width="2"/>
+  <circle cx="91" cy="26" r="8.5" fill="#15151e" stroke="#f7f4f1" stroke-width="2"/>
+</svg>`;
+
+/* ---------- state ---------- */
+let S = load();
+let tab = 'timer';
+let weekOffset = 0;      // 0 = this week, -1 = last week
+let allTime = false;
+let form = null;          // rating form state while a block is pending
+let flash = '';           // one-off message on the setup screen
+let audio = null;
+
+function load(){
+  let s = {};
+  try { s = JSON.parse(localStorage.getItem(KEY)) || {}; } catch(e){}
+  return {
+    subjects: Array.isArray(s.subjects) && s.subjects.length ? s.subjects : DEFAULT_SUBJECTS.slice(),
+    sessions: Array.isArray(s.sessions) ? s.sessions : [],
+    active: s.active || null,     // {kind,subject,plannedSec,start,acc,since,distractions}
+    pending: s.pending || null,   // finished block waiting for a rating
+    prefs: Object.assign({subject:'GRE Quant', minutes:25, breakMin:5}, s.prefs),
+  };
+}
+function save(){
+  try { localStorage.setItem(KEY, JSON.stringify(S)); } catch(e){}
+}
+
+/* ---------- helpers ---------- */
+const $ = (q, el=document) => el.querySelector(q);
+const esc = s => String(s).replace(/[&<>"']/g, c => ({'&':'&amp;','<':'&lt;','>':'&gt;','"':'&quot;',"'":'&#39;'}[c]));
+const pad = n => String(n).padStart(2,'0');
+const clockText = sec => { sec = Math.max(0, Math.ceil(sec)); return pad(Math.floor(sec/60)) + ':' + pad(sec%60); };
+function dur(sec){
+  const m = Math.round(sec/60);
+  if (m < 60) return m + 'm';
+  return Math.floor(m/60) + 'h' + (m%60 ? ' ' + m%60 + 'm' : '');
+}
+// "1h 15m" with the units dimmed, for display figures
+const durHtml = sec => esc(dur(sec)).replace(/([hm])/g, '<span class="unit">$1</span>');
+const median = a => { if(!a.length) return 0; const s=[...a].sort((x,y)=>x-y), m=s.length>>1; return s.length%2 ? s[m] : (s[m-1]+s[m])/2; };
+const fmtDay = t => new Date(t).toLocaleDateString('en-GB',{weekday:'short',day:'numeric',month:'short'});
+const fmtTime = t => new Date(t).toLocaleTimeString('en-GB',{hour:'2-digit',minute:'2-digit'});
+function weekStart(offset){
+  const d = new Date(); d.setHours(0,0,0,0);
+  d.setDate(d.getDate() - ((d.getDay()+6)%7) + offset*7);   // Monday
+  return d.getTime();
+}
+function elapsed(a){ return a.acc + (a.since ? (Date.now()-a.since)/1000 : 0); }
+// Distractions in one block: every tap counts, and an end-of-block reason that was never tapped counts once.
+function reasonCounts(s){
+  const m = {};
+  (s.distractions||[]).forEach(d => m[d.reason] = (m[d.reason]||0) + 1);
+  (s.broke||[]).forEach(b => { if (b !== 'Nothing' && !m[b]) m[b] = 1; });
+  return m;
+}
+function tally(list){
+  const m = {};
+  list.forEach(s => Object.entries(reasonCounts(s)).forEach(([r,n]) => m[r] = (m[r]||0) + n));
+  return Object.entries(m).sort((a,b) => b[1]-a[1]);
+}
+const tapSummary = ds => tally([{distractions:ds}]).map(([r,n]) => n > 1 ? `${r} ×${n}` : r).join(', ');
+
+function beep(){
+  try {
+    audio = audio || new (window.AudioContext || window.webkitAudioContext)();
+    [0, .35, .7].forEach(d => {
+      const o = audio.createOscillator(), g = audio.createGain();
+      o.frequency.value = 660; o.connect(g); g.connect(audio.destination);
+      const t = audio.currentTime + d;
+      g.gain.setValueAtTime(.0001, t);
+      g.gain.exponentialRampToValueAtTime(.25, t+.02);
+      g.gain.exponentialRampToValueAtTime(.0001, t+.28);
+      o.start(t); o.stop(t+.3);
+    });
+  } catch(e){}
+}
+function primeAudio(){
+  try { audio = audio || new (window.AudioContext || window.webkitAudioContext)(); audio.resume(); } catch(e){}
+}
+function themeMode(){
+  const t = document.documentElement.dataset.theme;
+  if (t) return t;
+  try { return window.matchMedia('(prefers-color-scheme: light)').matches ? 'light' : 'dark'; } catch(e){ return 'dark'; }
+}
+
+/* ---------- timer actions ---------- */
+function start(kind){
+  primeAudio();
+  const minutes = kind === 'break' ? S.prefs.breakMin : S.prefs.minutes;
+  S.active = {kind, subject:S.prefs.subject, plannedSec:minutes*60, start:Date.now(), acc:0, since:Date.now(), distractions:[]};
+  flash = ''; save(); render();
+}
+function togglePause(){
+  const a = S.active; if(!a) return;
+  if (a.since){ a.acc = elapsed(a); a.since = null; } else { a.since = Date.now(); }
+  save(); render();
+}
+function finish(focusedSec, end){
+  const a = S.active; S.active = null;
+  if (a.kind === 'break'){ flash = 'Break over. Pick the next block.'; }
+  else if (focusedSec < 60){ flash = 'Under a minute, so nothing was logged.'; }
+  else {
+    S.pending = {subject:a.subject, start:a.start, end, plannedMin:a.plannedSec/60, focusedSec:Math.round(focusedSec), distractions:a.distractions||[]};
+    form = null;
+  }
+  save(); render();
+}
+function tick(){
+  const a = S.active;
+  if (!a){ document.title = S.pending ? 'Rate your block · Focus Tracker' : 'Focus Tracker'; return; }
+  const left = a.plannedSec - elapsed(a);
+  if (left <= 0){
+    const end = a.since ? a.since + (a.plannedSec - a.acc)*1000 : Date.now();
+    beep(); finish(a.plannedSec, end); return;
+  }
+  const pct = (100 * (1 - left/a.plannedSec)).toFixed(2) + '%';
+  const c = $('#clock'), car = $('#car'), band = $('#band');
+  if (c) c.textContent = clockText(left);
+  if (car) car.style.left = pct;
+  if (band) band.style.width = pct;
+  document.title = clockText(left) + ' · ' + (a.kind === 'break' ? 'Break' : a.subject);
+}
+
+/* ---------- views ---------- */
+function render(){
+  document.querySelectorAll('.navlink').forEach(b => {
+    if (b.dataset.tab === tab) b.setAttribute('aria-current', 'page'); else b.removeAttribute('aria-current');
+  });
+  const sw = $('.theme-switch'); if (sw) sw.dataset.mode = themeMode();
+  $('#view').innerHTML = tab === 'week' ? weekView() : S.pending ? rateView() : S.active ? runView() : setupView();
+  tick();
+}
+
+// The block to scale: grid line on the left, chequered flag at the planned end.
+// The car is where you are; each white tick is a distraction tap.
+function strip(plannedSec, doneSec, taps){
+  const p = (100 * Math.min(1, doneSec/plannedSec)).toFixed(2);
+  return `<div class="strip-bleed" aria-hidden="true">
+    <div class="kerb"></div>
+    <div class="road"><div class="lane">
+      <i class="centre"></i><i class="gridline"></i><i class="finish"></i>
+      <i class="band" id="band" style="width:${p}%"></i>
+      ${(taps||[]).map(t => `<i class="tick" style="left:${(100*Math.min(1,(t.at||0)/plannedSec)).toFixed(2)}%"></i>`).join('')}
+      ${CAR.replace('<svg ', `<svg style="left:${p}%" `)}
+    </div></div>
+    <div class="marks"><span>0:00</span><span>${plannedSec/60}:00</span></div>
+  </div>`;
+}
+
+function setupView(){
+  const p = S.prefs;
+  const todayStart = new Date().setHours(0,0,0,0);
+  const today = S.sessions.filter(s => s.start >= todayStart);
+  const custom = !LENGTHS.includes(p.minutes);
+  return `<div class="measure">
+    <section class="hero">
+      <span class="badge num">Today · ${today.length ? `${today.length} block${today.length>1?'s':''} · ${dur(today.reduce((n,s)=>n+s.focusedSec,0))} focused` : 'no blocks yet'}</span>
+      <h1 class="hero-title">Lights out.<br><em>Eyes down.</em></h1>
+    </section>
+    <div class="stack">
+      ${flash ? `<p class="note">${esc(flash)}</p>` : ''}
+      <div class="group">
+        <span class="label">Subject</span>
+        <div class="row">
+          ${S.subjects.map(s => `<button class="chip" data-act="subject" data-v="${esc(s)}" aria-pressed="${s===p.subject}">${esc(s)}</button>`).join('')}
+        </div>
+        <form class="row" data-form="add-subject">
+          <input class="grow" type="text" name="name" maxlength="40" placeholder="Add a subject" aria-label="Add a subject">
+          <button class="btn" type="submit">Add</button>
+          ${DEFAULT_SUBJECTS.includes(p.subject) ? '' : `<button class="btn quiet" type="button" data-act="remove-subject">Remove “${esc(p.subject)}”</button>`}
+        </form>
+      </div>
+      <div class="group">
+        <span class="label">Block length</span>
+        <div class="row">
+          ${LENGTHS.map(m => `<button class="chip num" data-act="minutes" data-v="${m}" aria-pressed="${m===p.minutes}">${m} min</button>`).join('')}
+          <label class="row label">Custom
+            <input type="number" id="custom" min="1" max="180" value="${custom ? p.minutes : ''}" placeholder="min" aria-label="Custom length in minutes">
+          </label>
+        </div>
+      </div>
+      <div class="row">
+        <button class="btn primary go" data-act="start">Start ${p.minutes} min · ${esc(p.subject)}</button>
+        <button class="btn" data-act="break">${p.breakMin} min break</button>
+      </div>
+    </div>
+  </div>
+  <div style="margin-top:44px">${strip(p.minutes*60, 0, [])}</div>`;
+}
+
+function runView(){
+  const a = S.active, paused = !a.since, isBreak = a.kind === 'break';
+  const taps = a.distractions || [];
+  return `<div class="measure">
+    <section class="hero" style="padding-bottom:18px">
+      <span class="badge${paused ? '' : ' live'}">${isBreak ? 'Break' : esc(a.subject)} · ${a.plannedSec/60} min${paused ? ' · paused' : ''}</span>
+      <div class="clock${paused ? ' paused' : ''}" id="clock" role="timer">--:--</div>
+    </section>
+  </div>
+  ${strip(a.plannedSec, elapsed(a), taps)}
+  <div class="measure"><div class="stack" style="margin-top:24px">
+    <div class="row">
+      <button class="btn primary" data-act="pause">${paused ? 'Resume' : 'Pause'}</button>
+      <button class="btn" data-act="finish">${isBreak ? 'End break' : 'Finish now'}</button>
+      ${isBreak ? '' : '<button class="btn quiet" data-act="discard">Discard</button>'}
+    </div>
+    ${isBreak ? '' : `<section class="card focal">
+      <div><h2 class="title">Got distracted?</h2><p class="label">Tap what it was. The timer keeps running, and each tap is marked on the track.</p></div>
+      <div class="row">
+        ${TAPS.map(r => `<button class="chip tap" data-act="distracted" data-v="${r}">${r}</button>`).join('')}
+      </div>
+      ${taps.length ? `<div class="row between">
+        <span class="num">${taps.length} this block: ${esc(tapSummary(taps))}</span>
+        <button class="btn quiet" data-act="undo-distracted">Undo last</button>
+      </div>` : ''}
+    </section>`}
+  </div></div>`;
+}
+
+function rateView(){
+  const p = S.pending;
+  const taps = p.distractions || [];
+  // reasons tapped during the block come pre-selected
+  form = form || {rating:0, broke:BREAKERS.filter(b => taps.some(d => d.reason === b)), note:''};
+  return `<div class="measure">
+    <section class="hero">
+      <span class="badge num">${esc(p.subject)} · started ${fmtTime(p.start)}${p.focusedSec < p.plannedMin*60 ? ` · planned ${p.plannedMin}m` : ''}</span>
+      <h1 class="hero-title">${dur(p.focusedSec)} <em>done.</em></h1>
+    </section>
+    <div class="stack">
+      <div class="group">
+        <span class="label">How focused were you?</span>
+        <div class="rate">
+          ${RATE_LABELS.map((l,i) => `<button data-act="rate" data-v="${i+1}" aria-pressed="${form.rating===i+1}" aria-label="${i+1}, ${l}"><b>${i+1}</b><span>${l}</span></button>`).join('')}
+        </div>
+      </div>
+      <div class="group">
+        <span class="label">What broke it?</span>
+        ${taps.length ? `<p class="micro">You tapped distracted ${taps.length} time${taps.length>1?'s':''}: ${esc(tapSummary(taps))}.</p>` : ''}
+        <div class="row">
+          ${BREAKERS.map(b => `<button class="chip" data-act="broke" data-v="${b}" aria-pressed="${form.broke.includes(b)}">${b}</button>`).join('')}
+        </div>
+        <input type="text" id="note" maxlength="200" placeholder="Anything else? (optional)" value="${esc(form.note)}" aria-label="Note">
+      </div>
+      <div class="row">
+        <button class="btn primary go" data-act="save-session" ${form.rating ? '' : 'disabled'}>Save block</button>
+        <button class="btn quiet" data-act="drop-pending">Don't log this</button>
+      </div>
+    </div>
+  </div>`;
+}
+
+function stats(list){
+  const total = list.reduce((n,s) => n + s.focusedSec, 0);
+  const bySubject = {};
+  list.forEach(s => bySubject[s.subject] = (bySubject[s.subject]||0) + s.focusedSec);
+  const subjects = Object.entries(bySubject).sort((a,b) => b[1]-a[1]);
+  const buckets = BUCKETS.map(b => {
+    const ss = list.filter(s => { const h = new Date(s.start).getHours(); return h >= b.from && h < b.to; });
+    const sec = ss.reduce((n,s) => n + s.focusedSec, 0);
+    // focus weighted by minutes, so one short great block doesn't outvote a long one
+    return {...b, n:ss.length, sec, focus: sec ? ss.reduce((n,s) => n + s.rating*s.focusedSec, 0)/sec : 0};
+  }).filter(b => b.n);
+  const pool = buckets.some(b => b.n >= 2) ? buckets.filter(b => b.n >= 2) : buckets;
+  const best = pool.slice().sort((a,b) => b.focus - a.focus || b.sec - a.sec)[0] || null;
+  return {
+    total, subjects, buckets, best,
+    confident: !!best && best.n >= 2 && buckets.length >= 2,
+    typical: median(list.map(s => s.focusedSec)),
+    avgFocus: total ? list.reduce((n,s) => n + s.rating*s.focusedSec, 0)/total : 0,
+    broke: tally(list),
+  };
+}
+
+// Rolling two-week read, independent of which week is being viewed.
+function topCard(){
+  if (!S.sessions.length) return '';
+  const today = new Date().setHours(0,0,0,0);
+  const first = new Date(Math.min(...S.sessions.map(s => s.start))).setHours(0,0,0,0);
+  const days = Math.round((today - first)/DAY) + 1;
+  const recent = S.sessions.filter(s => s.start >= today - (WINDOW_DAYS-1)*DAY);
+  const t = tally(recent);
+  const ready = days >= WINDOW_DAYS;
+  let body;
+  if (!t.length) body = `<p>No distractions logged in the last ${WINDOW_DAYS} days.</p>`;
+  else {
+    const [name, n] = t[0];
+    const blocks = recent.filter(s => reasonCounts(s)[name]).length;
+    body = `<div>
+        <div class="big">${esc(name)}</div>
+        <p class="label num">${ready ? 'Top distraction' : 'Leading so far'} · ${n}× in ${blocks} of ${recent.length} block${recent.length>1?'s':''}</p>
+      </div>
+      ${ready
+        ? `<p><b style="color:var(--paper-900)">Fix this one thing.</b> ${FIXES[name] || 'Decide one change that removes it, and try it for a week.'}</p>`
+        : `<p class="micro">Day ${days} of ${WINDOW_DAYS}. Keep tapping, the read firms up after two weeks.</p>`}`;
+  }
+  return `<section class="card focal">
+    <div><h2 class="title">Top distraction</h2><p class="micro">Last ${WINDOW_DAYS} days, whichever week is shown.</p></div>
+    ${body}
+  </section>`;
+}
+
+function weekView(){
+  const ws = weekStart(weekOffset), we = ws + 7*DAY;
+  const list = (allTime ? S.sessions : S.sessions.filter(s => s.start >= ws && s.start < we)).slice().sort((a,b) => b.start - a.start);
+  const st = stats(list);
+  const range = `${fmtDay(ws)} – ${fmtDay(we - DAY)}`;
+  const label = allTime ? 'All time' : weekOffset === 0 ? `This week · ${range}` : range;
+  const picker = `<div class="row">
+      <button class="btn sq" data-act="week" data-v="-1" aria-label="Previous week" ${allTime?'disabled':''}>‹</button>
+      <button class="btn sq" data-act="week" data-v="1" aria-label="Next week" ${allTime || weekOffset>=0 ? 'disabled' : ''}>›</button>
+      <button class="chip" data-act="alltime" aria-pressed="${allTime}">All time</button>
+    </div>`;
+  const hero = (title, sub) => `<section class="hero">
+      <span class="badge num">${label}</span>
+      <h1 class="hero-title">${title}</h1>
+      <p class="hero-sub">${sub}</p>
+    </section>`;
+  if (!list.length) return `<div class="measure">
+    ${hero('No blocks<br><em>yet.</em>', `No blocks logged ${allTime ? 'yet' : 'in this week'}.`)}
+    <div class="stack">${picker}${topCard()}${dataCard()}</div>
+  </div>`;
+
+  const maxSub = st.subjects[0][1];
+  const head = st.confident
+    ? hero(`<em>${st.best.name}</em>`, `Your best time of day: ${st.best.range}, focus <b class="num">${st.best.focus.toFixed(1)}</b> out of 5 across ${st.best.n} blocks.`)
+    : hero('Too early<br><em>to call.</em>', `Early read: ${st.best.name} (${st.best.range}). Log a few more blocks at different times of day to compare.`);
+  return `<div class="measure">
+    ${head}
+    <div class="stack">
+      ${picker}
+      <dl class="stats">
+        <div class="stat"><dd>${durHtml(st.total)}</dd><dt>Focused</dt></div>
+        <div class="stat"><dd>${list.length}</dd><dt>Block${list.length>1?'s':''}</dt></div>
+        <div class="stat"><dd>${durHtml(st.typical)}</dd><dt>Typical block (median)</dt></div>
+        <div class="stat"><dd>${st.avgFocus.toFixed(1)}<span class="unit"> / 5</span></dd><dt>Average focus</dt></div>
+      </dl>
+      ${topCard()}
+      <section class="group">
+        <h2 class="title">Hours per subject</h2>
+        <div class="board">
+          ${st.subjects.map(([name,sec],i) => `<span><b class="pos" data-p="${i+1}">P${i+1}</b></span><span class="name">${esc(name)}</span><span class="meterwrap"><span class="meter${i===0?' lead':''}"><i style="width:${(100*sec/maxSub).toFixed(1)}%"></i></span></span><span class="val">${dur(sec)}</span>`).join('')}
+        </div>
+      </section>
+      <section class="group">
+        <h2 class="title">Time of day</h2>
+        <div class="board">
+          ${st.buckets.map(b => { const lead = b===st.best && st.confident; return `<span class="micro">${b.range}</span><span class="name">${b.name}${lead ? '<span class="marker">Best</span>' : ''}</span><span class="meterwrap" title="Average focus ${b.focus.toFixed(1)} of 5"><span class="meter${lead?' lead':''}"><i style="width:${(20*b.focus).toFixed(1)}%"></i></span></span><span class="val">${b.focus.toFixed(1)} · ${dur(b.sec)} · ${b.n}×</span>`; }).join('')}
+        </div>
+        <p class="micro">Bar is average focus out of 5, weighted by minutes. Then time focused and number of blocks.</p>
+      </section>
+      ${st.broke.length ? `<section class="group">
+        <h2 class="title">What broke focus</h2>
+        <div class="board">
+          ${st.broke.map(([b,n],i) => `<span><b class="pos" data-p="${i+1}">P${i+1}</b></span><span class="name">${esc(b)}</span><span class="meterwrap"><span class="meter${i===0?' lead':''}"><i style="width:${(100*n/st.broke[0][1]).toFixed(1)}%"></i></span></span><span class="val">${n}×</span>`).join('')}
+        </div>
+      </section>` : ''}
+      <section class="group">
+        <h2 class="title">Log</h2>
+        <ul class="log">
+          ${list.map(s => `<li>
+            <div>
+              <div><span class="code">${esc(s.subject)}</span> · <span class="num">${dur(s.focusedSec)}</span><span class="f">F${s.rating}</span></div>
+              <div class="micro">${fmtDay(s.start)}, ${fmtTime(s.start)}${(s.broke||[]).length ? ' · ' + esc(s.broke.join(', ')) : ''}${(s.distractions||[]).length ? ` · ${s.distractions.length} tap${s.distractions.length>1?'s':''}` : ''}${s.note ? ' · ' + esc(s.note) : ''}</div>
+            </div>
+            <button class="del" data-act="delete" data-v="${esc(s.id)}" aria-label="Delete this block">✕</button>
+          </li>`).join('')}
+        </ul>
+      </section>
+      ${dataCard()}
+    </div>
+  </div>`;
+}
+
+function dataCard(){
+  return `<section class="card">
+    <p class="label">The log lives in this browser only. Export now and then so clearing browser data can't wipe it.</p>
+    <div class="row">
+      <button class="btn" data-act="export">Export JSON</button>
+      <label class="btn" style="display:inline-flex;align-items:center">Import JSON<input type="file" id="import" accept="application/json,.json" hidden></label>
+    </div>
+  </section>`;
+}
+
+/* ---------- events ---------- */
+document.addEventListener('click', e => {
+  const el = e.target.closest('[data-act]'); if (!el) return;
+  const act = el.dataset.act, v = el.dataset.v;
+  if (act === 'tab'){ tab = el.dataset.tab; render(); window.scrollTo(0,0); }
+  else if (act === 'theme'){
+    const next = themeMode() === 'dark' ? 'light' : 'dark';
+    document.documentElement.dataset.theme = next;
+    try { localStorage.setItem(THEME_KEY, next); } catch(e){}
+    el.dataset.mode = next;
+  }
+  else if (act === 'subject'){ S.prefs.subject = v; save(); render(); }
+  else if (act === 'remove-subject'){
+    S.subjects = S.subjects.filter(s => s !== S.prefs.subject);
+    S.prefs.subject = S.subjects[0]; save(); render();
+  }
+  else if (act === 'minutes'){ S.prefs.minutes = +v; save(); render(); }
+  else if (act === 'start'){ start('focus'); }
+  else if (act === 'break'){ start('break'); }
+  else if (act === 'pause'){ togglePause(); }
+  else if (act === 'distracted'){
+    if (!S.active) return;
+    (S.active.distractions = S.active.distractions || []).push({t:Date.now(), at:Math.round(elapsed(S.active)), reason:v});
+    save(); render();
+  }
+  else if (act === 'undo-distracted'){
+    if (S.active && S.active.distractions){ S.active.distractions.pop(); save(); render(); }
+  }
+  else if (act === 'finish'){ finish(elapsed(S.active), Date.now()); }
+  else if (act === 'discard'){
+    if (confirm('Discard this block without logging it?')){ S.active = null; save(); render(); }
+  }
+  else if (act === 'rate'){
+    form.rating = +v;
+    document.querySelectorAll('[data-act="rate"]').forEach(b => b.setAttribute('aria-pressed', b.dataset.v === v));
+    $('[data-act="save-session"]').disabled = false;
+  }
+  else if (act === 'broke'){
+    const i = form.broke.indexOf(v);
+    if (i >= 0) form.broke.splice(i,1);
+    else if (v === 'Nothing') form.broke = ['Nothing'];
+    else form.broke = form.broke.filter(b => b !== 'Nothing').concat(v);
+    document.querySelectorAll('[data-act="broke"]').forEach(b => b.setAttribute('aria-pressed', form.broke.includes(b.dataset.v)));
+  }
+  else if (act === 'save-session'){
+    if (!form.rating) return;
+    S.sessions.push({id: Date.now().toString(36) + Math.random().toString(36).slice(2,6), ...S.pending,
+      rating: form.rating, broke: form.broke.slice(), note: $('#note').value.trim()});
+    S.pending = null; form = null;
+    flash = 'Logged. Take a break before the next one.';
+    save(); render();
+  }
+  else if (act === 'drop-pending'){
+    if (confirm('Throw this block away without logging it?')){ S.pending = null; form = null; save(); render(); }
+  }
+  else if (act === 'week'){ weekOffset = Math.min(0, weekOffset + (+v)); render(); }
+  else if (act === 'alltime'){ allTime = !allTime; render(); }
+  else if (act === 'delete'){
+    if (confirm('Delete this block from the log?')){ S.sessions = S.sessions.filter(s => s.id !== v); save(); render(); }
+  }
+  else if (act === 'export'){
+    const blob = new Blob([JSON.stringify({subjects:S.subjects, sessions:S.sessions}, null, 2)], {type:'application/json'});
+    const a = document.createElement('a');
+    const d = new Date();
+    a.href = URL.createObjectURL(blob);
+    a.download = `focus-log-${d.getFullYear()}-${pad(d.getMonth()+1)}-${pad(d.getDate())}.json`;
+    a.click(); URL.revokeObjectURL(a.href);
+  }
+});
+
+document.addEventListener('submit', e => {
+  if (e.target.dataset.form !== 'add-subject') return;
+  e.preventDefault();
+  const name = e.target.elements.name.value.trim();
+  if (!name) return;
+  const existing = S.subjects.find(s => s.toLowerCase() === name.toLowerCase());
+  if (!existing) S.subjects.push(name);
+  S.prefs.subject = existing || name;
+  save(); render();
+});
+
+document.addEventListener('change', e => {
+  if (e.target.id === 'custom'){
+    const m = Math.round(+e.target.value);
+    if (m >= 1 && m <= 180){ S.prefs.minutes = m; save(); render(); }
+  }
+  else if (e.target.id === 'import'){
+    const f = e.target.files[0]; if (!f) return;
+    f.text().then(t => {
+      const d = JSON.parse(t);
+      const ok = s => s && typeof s.subject === 'string' && Number.isFinite(s.start) && Number.isFinite(s.focusedSec) && s.rating >= 1 && s.rating <= 5;
+      const incoming = (Array.isArray(d) ? d : d.sessions || []).filter(ok);
+      const have = new Set(S.sessions.map(s => s.id));
+      let added = 0;
+      incoming.forEach(s => {
+        s.id = String(s.id || s.start);
+        if (!have.has(s.id)){ S.sessions.push(s); have.add(s.id); added++; }
+      });
+      (d.subjects || []).forEach(n => { if (typeof n === 'string' && !S.subjects.includes(n)) S.subjects.push(n); });
+      save(); render();
+      alert(`Imported ${added} new block${added===1?'':'s'}.`);
+    }).catch(() => alert("That file couldn't be read as a focus log."));
+  }
+});
+
+document.addEventListener('input', e => { if (e.target.id === 'note' && form) form.note = e.target.value; });
+window.addEventListener('beforeunload', e => { if (S.pending){ e.preventDefault(); e.returnValue = ''; } });
+
+if (!S.subjects.includes(S.prefs.subject)) S.prefs.subject = S.subjects[0];
+render();
+setInterval(tick, 250);
+</script>
+</body>
+</html>
